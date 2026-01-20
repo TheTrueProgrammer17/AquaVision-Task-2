@@ -116,13 +116,15 @@ while True:
     command = "SEARCH"
     distance_cm = None
 
+    # Gate prioritization
     preferred_order = ["green", "red", "blue", "yellow"]
+    ASSIGNED_COLOR = None
     for color in preferred_order:
         if color in detections:
             ASSIGNED_COLOR = color
             break
 
-    # Explicit message for prioritization
+    # Message logic — only show if a gate is detected
     if "green" in detections and "red" in detections:
         cv.putText(frame, "Prioritizing GREEN gate over RED", (10, 120),
                 cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
