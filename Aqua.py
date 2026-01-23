@@ -31,11 +31,11 @@ FOCAL_LENGTH = None         # will be calculated once
 cap = cv.VideoCapture(0)
 
 cv.namedWindow("Frame", cv.WINDOW_NORMAL)
-cv.namedWindow("Mask", cv.WINDOW_NORMAL)
-cv.namedWindow("Edges", cv.WINDOW_NORMAL)
+# cv.namedWindow("Mask", cv.WINDOW_NORMAL)
+# cv.namedWindow("Edges", cv.WINDOW_NORMAL)
 cv.resizeWindow("Frame", 800, 600)
-cv.resizeWindow("Mask", 400, 300)
-cv.resizeWindow("Edges", 400, 300)
+# cv.resizeWindow("Mask", 400, 300)
+# cv.resizeWindow("Edges", 400, 300)
 
 distance_buffer = []
 
@@ -99,16 +99,17 @@ while True:
                 cx, cy = x + bw // 2, y + bh // 2
 
                 aspect_ratio = bw / float(bh)
+                confidence = area / float(bw * bh)
 
-                if 0.8 < aspect_ratio < 1.2:
-                    cx, cy = x + bw // 2, y + bh // 2
+                # Only accept near-square gates with good confidence
+                # Confidence > 0.6 → likely a gate
+                # Confidence < 0.6 → probably noise or partial contour
+                if 0.8 < aspect_ratio < 1.2 and confidence > 0.6:
+                    cv.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
+                    cv.putText(frame, f"{color_name} ({confidence:.2f})", (x, y - 10),
+                            cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-                # Draw gate
-                cv.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
-                cv.putText(frame, color_name, (x, y - 10),
-                           cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-
-                detections[color_name] = {"cx": cx, "cy": cy, "bw": bw, "bh": bh}
+                    detections[color_name] = {"cx": cx, "cy": cy, "bw": bw, "bh": bh, "confidence": confidence}
 
     # -------------------------
     # Navigation logic for assigned color
@@ -164,9 +165,19 @@ while True:
                 cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
         # Alignment logic
-        dx = gate_cx - frame_cx
-        dy = gate_cy - frame_cy
+        dx = gate_cx - frame_cx   # horizontal offset (pixels)
+        dy = gate_cy - frame_cy   # vertical offset (pixels)
 
+        # Offset calculator (normalized to frame size)
+        offset_x = dx / float(w)   # -1.0 (far left) to +1.0 (far right)
+        offset_y = dy / float(h)   # -1.0 (top) to +1.0 (bottom)
+
+        cv.putText(frame, f"Offset X: {offset_x:.2f}", (10, 150),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv.putText(frame, f"Offset Y: {offset_y:.2f}", (10, 180),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+        # Command logic using offsets
         if abs(dx) > abs(dy):
             if dx > 40:
                 command = "MOVE RIGHT"
@@ -181,6 +192,7 @@ while True:
                 command = "MOVE DOWN"
             else:
                 command = "CENTERED"
+
 
     # -------------------------
     # Display
