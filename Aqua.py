@@ -86,6 +86,8 @@ while True:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
         mask = cv.morphologyEx(mask, cv.MORPH_DILATE, kernel)
+        mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel)
+
 
         combined_mask = cv.bitwise_or(combined_mask, mask)
 
@@ -99,12 +101,14 @@ while True:
                 cx, cy = x + bw // 2, y + bh // 2
 
                 aspect_ratio = bw / float(bh)
-                confidence = area / float(bw * bh)
+
+                perimeter = cv.arcLength(gate, True)
+                confidence = perimeter / float(2*(bw + bh))
 
                 # Only accept near-square gates with good confidence
                 # Confidence > 0.6 → likely a gate
                 # Confidence < 0.6 → probably noise or partial contour
-                if 0.8 < aspect_ratio < 1.2 and confidence > 0.6:
+                if (area > 500 or perimeter > 500) and 0.8 < aspect_ratio < 1.2 and confidence > 0.5:
                     cv.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
                     cv.putText(frame, f"{color_name} ({confidence:.2f})", (x, y - 10),
                             cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
