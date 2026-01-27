@@ -10,7 +10,8 @@ ASSIGNED_COLOR = "green"   # Change this to "red", "green", or "yellow" as neede
 # HSV Color Ranges
 # =========================
 COLOR_RANGES = {
-    "blue":   [(np.array([90, 80, 40]), np.array([140, 255, 255]))],
+   # "white": [(np.array([0,0,168]),np.array([179,255,255]))],
+   # "blue":   [(np.array([90, 80, 40]), np.array([140, 255, 255]))],
     "red":    [(np.array([0, 80, 40]), np.array([10, 255, 255])),
                (np.array([165, 80, 40]), np.array([180, 255, 255]))],
     "green":  [(np.array([35, 60, 40]), np.array([85, 255, 255]))],
@@ -28,7 +29,7 @@ FOCAL_LENGTH = None         # will be calculated once
 # =========================
 # Camera Setup
 # =========================
-cap = cv.VideoCapture(0)
+cap = cv.VideoCapture(2)
 
 cv.namedWindow("Frame", cv.WINDOW_NORMAL)
 # cv.namedWindow("Mask", cv.WINDOW_NORMAL)
@@ -122,7 +123,7 @@ while True:
     distance_cm = None
 
     # Gate prioritization
-    preferred_order = ["green", "red", "blue", "yellow"]
+    preferred_order = ["white","green", "red", "blue", "yellow"]
     ASSIGNED_COLOR = None
     for color in preferred_order:
         if color in detections:
