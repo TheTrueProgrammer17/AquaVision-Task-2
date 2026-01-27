@@ -29,7 +29,7 @@ FOCAL_LENGTH = None         # will be calculated once
 # =========================
 # Camera Setup
 # =========================
-cap = cv.VideoCapture(2)
+cap = cv.VideoCapture(0)
 
 cv.namedWindow("Frame", cv.WINDOW_NORMAL)
 # cv.namedWindow("Mask", cv.WINDOW_NORMAL)
@@ -210,7 +210,7 @@ while True:
 
     # Apply blue tint overlay
     blue_overlay = np.full(frame.shape, (255, 0, 0), dtype=np.uint8)  # BGR blue
-    alpha = 0.2  # transparency factor
+    alpha = 0.5  # transparency factor
     frame = cv.addWeighted(blue_overlay, alpha, frame, 1 - alpha, 0)
 
     cv.imshow("Frame", frame)
