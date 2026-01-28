@@ -15,7 +15,7 @@ COLOR_RANGES = {
     "red":    [(np.array([0, 80, 40]), np.array([10, 255, 255])),
                (np.array([165, 80, 40]), np.array([180, 255, 255]))],
     "green":  [(np.array([35, 60, 40]), np.array([85, 255, 255]))],
-    "yellow": [(np.array([15, 80, 40]), np.array([40, 255, 255]))]
+    # "yellow": [(np.array([15, 80, 40]), np.array([40, 255, 255]))]
 }
 
 
@@ -29,7 +29,9 @@ FOCAL_LENGTH = None         # will be calculated once
 # =========================
 # Camera Setup
 # =========================
-cap = cv.VideoCapture(2)
+cap = cv.VideoCapture(2, cv.CAP_V4L2)
+cap.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
 
 cv.namedWindow("Frame", cv.WINDOW_NORMAL)
 # cv.namedWindow("Mask", cv.WINDOW_NORMAL)
@@ -40,6 +42,8 @@ cv.resizeWindow("Frame", 800, 600)
 
 distance_buffer = []
 
+prev_gate_pos = None
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -48,7 +52,7 @@ while True:
     # -------------------------
     # Preprocessing
     # -------------------------
-    frame = cv.bilateralFilter(frame, d=9, sigmaColor=75, sigmaSpace=75)
+    # frame = cv.bilateralFilter(frame, d=9, sigmaColor=75, sigmaSpace=75)
 
     # White balance / contrast enhancement
     lab = cv.cvtColor(frame, cv.COLOR_BGR2LAB)
@@ -60,7 +64,9 @@ while True:
 
     hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
     h, s, v = cv.split(hsv)
-    v = cv.equalizeHist(v)
+    # v = cv.equalizeHist(v)
+    clahe_v = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    v = clahe_v.apply(v)
     hsv = cv.merge((h, s, v))
 
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
@@ -84,7 +90,7 @@ while True:
         edges = cv.Canny(gray, 50, 150)
 
         # Morphological cleanup
-        kernel = np.ones((5, 5), np.uint8)
+        kernel = np.ones((3, 3), np.uint8)
         mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
         mask = cv.morphologyEx(mask, cv.MORPH_DILATE, kernel)
         mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel)
@@ -95,26 +101,37 @@ while True:
         # Find contours for this color
         contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         if contours:
-            gate = max(contours, key=cv.contourArea)
-            area = cv.contourArea(gate)
-            if area > 500:
-                x, y, bw, bh = cv.boundingRect(gate)
-                cx, cy = x + bw // 2, y + bh // 2
+            # 1. Filter out tiny noise immediately
+            valid_contours = [c for c in contours if cv.contourArea(c) > 400]
+            
+            if valid_contours:
+                # 2. Grab the largest potential gate
+                gate = max(valid_contours, key=cv.contourArea)
+                
+                # 3. Shape Approximation: Simplifies the shape to see if it's actually rectangular
+                peri = cv.arcLength(gate, True)
+                approx = cv.approxPolyDP(gate, 0.04 * peri, True)
+                
+                # 4. Only proceed if it looks like a polygon with 4-8 corners
+                if 4 <= len(approx) <= 8:
+                    x, y, bw, bh = cv.boundingRect(gate)
+                    
+                    # 5. Temporal Smoothing
+                    if color_name in detections:
+                        old_cx, old_cy = detections[color_name]["cx"], detections[color_name]["cy"]
+                        cx = int(old_cx * 0.7 + (x + bw // 2) * 0.3)
+                        cy = int(old_cy * 0.7 + (y + bh // 2) * 0.3)
+                    else:
+                        cx, cy = x + bw // 2, y + bh // 2
 
-                aspect_ratio = bw / float(bh)
-
-                perimeter = cv.arcLength(gate, True)
-                confidence = perimeter / float(2*(bw + bh))
-
-                # Only accept near-square gates with good confidence
-                # Confidence > 0.6 → likely a gate
-                # Confidence < 0.6 → probably noise or partial contour
-                if (area > 500 or perimeter > 500) and 0.8 < aspect_ratio < 1.2 and confidence > 0.5:
+                    # --- ADD THESE DRAWING LINES BACK ---
                     cv.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
-                    cv.putText(frame, f"{color_name} ({confidence:.2f})", (x, y - 10),
-                            cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                    cv.putText(frame, f"{color_name}", (x, y - 10),
+                               cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                    # ------------------------------------
 
-                    detections[color_name] = {"cx": cx, "cy": cy, "bw": bw, "bh": bh, "confidence": confidence}
+                    # Store the smoothed result
+                    detections[color_name] = {"cx": cx, "cy": cy, "bw": bw, "bh": bh, "confidence": 1.0}
 
     # -------------------------
     # Navigation logic for assigned color
@@ -123,7 +140,7 @@ while True:
     distance_cm = None
 
     # Gate prioritization
-    preferred_order = ["white","green", "red", "blue", "yellow"]
+    preferred_order = ["green", "red"]
     ASSIGNED_COLOR = None
     for color in preferred_order:
         if color in detections:
@@ -174,8 +191,8 @@ while True:
         dy = gate_cy - frame_cy   # vertical offset (pixels)
 
         # Offset calculator (normalized to frame size)
-        offset_x = dx / float(w)   # -1.0 (far left) to +1.0 (far right)
-        offset_y = dy / float(h)   # -1.0 (top) to +1.0 (bottom)
+        offset_x = dx / (w / 2)   # -1.0 (far left) to +1.0 (far right)
+        offset_y = -dy / (h / 2)   # +1.0 (top) to -1.0 (bottom)
 
         cv.putText(frame, f"Offset X: {offset_x:.2f}", (10, 150),
                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
@@ -206,9 +223,15 @@ while True:
     cv.line(frame, (0, frame_cy), (w, frame_cy), (255, 255, 255), 1)
 
     cv.putText(frame, f"COMMAND: {command}", (10, 30),
-               cv.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            cv.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+    # Apply blue tint overlay
+    # blue_overlay = np.full(frame.shape, (255, 0, 0), dtype=np.uint8)  # BGR blue
+    # alpha = 0.3  # transparency factor
+    # frame = cv.addWeighted(blue_overlay, alpha, frame, 1 - alpha, 0)
 
     cv.imshow("Frame", frame)
+
     # cv.imshow("Mask", combined_mask)
     # cv.imshow("Edges", edges)
 
